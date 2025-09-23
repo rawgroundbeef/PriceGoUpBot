@@ -14,14 +14,20 @@ interface VercelResponse {
 import { container } from '../src/ioc-container';
 import { TYPES } from '../src/types';
 import { SweeperService } from '../src/services/sweeper.service';
+import { CRON_SECRET, SWEEPER_SECRET } from '../src/config';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'POST') {
+  // Only allow GET requests (Vercel cron)
+  if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  // Vercel cron authentication - check Authorization header or query param
   const auth = req.headers.authorization;
-  if (auth !== `Bearer ${process.env.SWEEPER_SECRET}`) {
+  const querySecret = (req as any).query?.secret;
+  const isAuthorized = auth === `Bearer ${CRON_SECRET}` || querySecret === CRON_SECRET;
+  
+  if (!isAuthorized) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 

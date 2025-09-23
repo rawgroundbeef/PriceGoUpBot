@@ -15,6 +15,7 @@ import { TYPES } from '../src/types';
 import { VolumeEngineService } from '../src/services/volume-engine.service';
 import { VolumeOrderService } from '../src/services/volume-order.service';
 import { OrderStatus } from '../src/interfaces';
+import { CRON_SECRET, VOLUME_PROCESSOR_SECRET } from '../src/config';
 
 /**
  * Vercel Edge Function to process volume orders
@@ -22,14 +23,17 @@ import { OrderStatus } from '../src/interfaces';
  * to start volume generation for confirmed orders
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Only allow POST requests
-  if (req.method !== 'POST') {
+  // Only allow GET requests (Vercel cron)
+  if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // Simple authentication - you should implement proper auth
-  const authHeader = req.headers.authorization;
-  if (authHeader !== `Bearer ${process.env.VOLUME_PROCESSOR_SECRET}`) {
+  // Vercel cron authentication - check Authorization header or query param
+  const auth = req.headers.authorization;
+  const querySecret = (req as any).query?.secret;
+  const isAuthorized = auth === `Bearer ${CRON_SECRET}` || querySecret === CRON_SECRET;
+  
+  if (!isAuthorized) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
