@@ -43,13 +43,5 @@
       "path": "/api/sweeper",
       "schedule": "*/5 * * * *"
     }
-  ],
-  "functions": {
-    "api/volume-processor.ts": {
-      "maxDuration": 300
-    },
-    "api/sweeper.ts": {
-      "maxDuration": 300
-    }
-  }
+  ]
 }
