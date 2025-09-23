@@ -289,12 +289,18 @@ export class SolanaService implements ISolanaService {
       const url = `https://api.dexscreener.com/latest/dex/tokens/${tokenAddress}`;
       console.log(`📡 Fetching: ${url}`);
 
+      // Create fetch with timeout using AbortController
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
       const res = await fetch(url, {
-        timeout: 10000, // 10 second timeout
+        signal: controller.signal,
         headers: {
           "User-Agent": "PriceGoUpBot/1.0",
         },
       });
+
+      clearTimeout(timeoutId);
 
       console.log(`📊 Response status: ${res.status} ${res.statusText}`);
       if (!res.ok) {
