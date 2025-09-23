@@ -1,13 +1,13 @@
-import { injectable } from 'inversify';
-import { BaseService } from './base.service';
-import { Telegraf } from 'telegraf';
+import { injectable } from "inversify";
+import { BaseService } from "./base.service";
+import { Telegraf } from "telegraf";
 
 export enum LogLevel {
-  ERROR = 'ERROR',
-  WARN = 'WARN',
-  INFO = 'INFO',
-  DEBUG = 'DEBUG',
-  TRACE = 'TRACE'
+  ERROR = "ERROR",
+  WARN = "WARN",
+  INFO = "INFO",
+  DEBUG = "DEBUG",
+  TRACE = "TRACE",
 }
 
 @injectable()
@@ -17,7 +17,7 @@ export class LoggerService extends BaseService {
   private isTestEnvironment: boolean = false;
 
   public constructor() {
-    super(new Telegraf(''));
+    super(new Telegraf(""));
   }
 
   public static getInstance(): LoggerService {
@@ -40,43 +40,43 @@ export class LoggerService extends BaseService {
     this.isTestEnvironment = isTest;
   }
 
-  public error(message: string, ...args: any[]): void {
+  public error(message: string, ...args: unknown[]): void {
     if (this.shouldLog(LogLevel.ERROR)) {
       console.error(`❌ ${message}`, ...args);
     }
   }
 
-  public warn(message: string, ...args: any[]): void {
+  public warn(message: string, ...args: unknown[]): void {
     if (this.shouldLog(LogLevel.WARN)) {
       console.warn(`⚠️ ${message}`, ...args);
     }
   }
 
-  public info(message: string, ...args: any[]): void {
+  public info(message: string, ...args: unknown[]): void {
     if (this.shouldLog(LogLevel.INFO)) {
       console.log(`ℹ️ ${message}`, ...args);
     }
   }
 
-  public debug(message: string, ...args: any[]): void {
+  public debug(message: string, ...args: unknown[]): void {
     if (this.shouldLog(LogLevel.DEBUG)) {
       console.log(`🔍 ${message}`, ...args);
     }
   }
 
-  public trace(message: string, ...args: any[]): void {
+  public trace(message: string, ...args: unknown[]): void {
     if (this.shouldLog(LogLevel.TRACE)) {
       console.log(`🔎 ${message}`, ...args);
     }
   }
 
-  public success(message: string, ...args: any[]): void {
+  public success(message: string, ...args: unknown[]): void {
     if (this.shouldLog(LogLevel.INFO)) {
       console.log(`✅ ${message}`, ...args);
     }
   }
 
-  public loading(message: string, ...args: any[]): void {
+  public loading(message: string, ...args: unknown[]): void {
     if (this.shouldLog(LogLevel.INFO)) {
       console.log(`🔄 ${message}`, ...args);
     }
@@ -92,7 +92,7 @@ export class LoggerService extends BaseService {
     const levels = Object.values(LogLevel);
     const currentLevelIndex = levels.indexOf(this.currentLevel);
     const messageLevelIndex = levels.indexOf(level);
-    
+
     return messageLevelIndex <= currentLevelIndex;
   }
-} 
+}

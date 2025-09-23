@@ -1,12 +1,18 @@
-import { injectable, inject } from 'inversify';
-import { TYPES } from '../types';
-import { SupabaseService } from './supabase.service';
-import { PaymentService } from './payment.service';
-import { VolumeOrder, OrderStatus, IVolumeOrderService, PoolType } from '../interfaces';
-import { v4 as uuidv4 } from 'uuid';
-import * as crypto from 'crypto';
-const { hkdf } = require('@panva/hkdf');
-import { walletMasterSeed } from '../config';
+import { injectable, inject } from "inversify";
+import { TYPES } from "../types";
+import { SupabaseService } from "./supabase.service";
+import { PaymentService } from "./payment.service";
+import {
+  VolumeOrder,
+  OrderStatus,
+  IVolumeOrderService,
+  PoolType,
+} from "../interfaces";
+import { Keypair } from "@solana/web3.js";
+// import { v4 as uuidv4 } from 'uuid'; // Unused
+// import * as crypto from 'crypto'; // Unused
+const { hkdf } = require("@panva/hkdf");
+import { walletMasterSeed } from "../config";
 
 @injectable()
 export class VolumeOrderService implements IVolumeOrderService {
@@ -15,34 +21,47 @@ export class VolumeOrderService implements IVolumeOrderService {
 
   constructor(
     @inject(TYPES.SupabaseService) supabaseService: SupabaseService,
-    @inject(TYPES.PaymentService) paymentService: PaymentService
+    @inject(TYPES.PaymentService) paymentService: PaymentService,
   ) {
     this.supabaseService = supabaseService;
     this.paymentService = paymentService;
   }
 
-  async createOrder(orderData: Partial<VolumeOrder>): Promise<VolumeOrder> {
+  async createOrder(
+    orderData: Pick<
+      VolumeOrder,
+      | "user_id"
+      | "token_address"
+      | "pool_address"
+      | "volume_target"
+      | "duration_hours"
+    > &
+      Partial<VolumeOrder>,
+  ): Promise<VolumeOrder> {
     // Calculate order costs
     const costData = await this.paymentService.calculateOrderCost(
-      orderData.volume_target!,
-      orderData.duration_hours!
+      orderData.volume_target,
+      orderData.duration_hours,
     );
 
     // Create the order first to get the ID
-    const draftOrderData: Omit<VolumeOrder, 'id' | 'created_at' | 'updated_at'> = {
-      user_id: orderData.user_id!,
+    const draftOrderData: Omit<
+      VolumeOrder,
+      "id" | "created_at" | "updated_at"
+    > = {
+      user_id: orderData.user_id,
       username: orderData.username,
-      token_address: orderData.token_address!,
-      pool_address: orderData.pool_address!,
-      pool_type: this.detectPoolType(orderData.pool_address!),
-      volume_target: orderData.volume_target!,
-      duration_hours: orderData.duration_hours!,
+      token_address: orderData.token_address,
+      pool_address: orderData.pool_address,
+      pool_type: this.detectPoolType(orderData.pool_address),
+      volume_target: orderData.volume_target,
+      duration_hours: orderData.duration_hours,
       tasks_count: costData.tasksCount,
       cost_per_task: costData.costPerTask,
       total_cost: costData.totalCost,
       status: orderData.status || OrderStatus.PENDING_PAYMENT,
-      payment_address: 'TEMP', // Temporary, will be updated
-      payment_signature: orderData.payment_signature
+      payment_address: "TEMP", // Temporary, will be updated
+      payment_signature: orderData.payment_signature,
     };
 
     const order = await this.supabaseService.createVolumeOrder(draftOrderData);
@@ -52,10 +71,12 @@ export class VolumeOrderService implements IVolumeOrderService {
 
     // Update order with the correct payment address
     await this.supabaseService.updateVolumeOrder(order.id, {
-      payment_address: paymentAddress
+      payment_address: paymentAddress,
     });
 
-    console.log(`🔑 Generated deterministic payment address for order ${order.id.substring(0, 8)}: ${paymentAddress}`);
+    console.log(
+      `🔑 Generated deterministic payment address for order ${order.id.substring(0, 8)}: ${paymentAddress}`,
+    );
 
     return { ...order, payment_address: paymentAddress };
   }
@@ -64,17 +85,24 @@ export class VolumeOrderService implements IVolumeOrderService {
     return await this.supabaseService.getVolumeOrder(orderId);
   }
 
-  async updateOrder(orderId: string, updates: Partial<VolumeOrder>): Promise<void> {
+  async updateOrder(
+    orderId: string,
+    updates: Partial<VolumeOrder>,
+  ): Promise<void> {
     await this.supabaseService.updateVolumeOrder(orderId, updates);
   }
 
   async updateOrderStatus(orderId: string, status: OrderStatus): Promise<void> {
     const updates: Partial<VolumeOrder> = { status };
-    
+
     // Set timestamps based on status
     if (status === OrderStatus.RUNNING) {
       updates.started_at = new Date().toISOString();
-    } else if (status === OrderStatus.COMPLETED || status === OrderStatus.CANCELLED || status === OrderStatus.FAILED) {
+    } else if (
+      status === OrderStatus.COMPLETED ||
+      status === OrderStatus.CANCELLED ||
+      status === OrderStatus.FAILED
+    ) {
       updates.completed_at = new Date().toISOString();
     }
 
@@ -85,16 +113,21 @@ export class VolumeOrderService implements IVolumeOrderService {
     return await this.supabaseService.getUserOrders(userId);
   }
 
-  async updatePaymentSignature(orderId: string, signature: string): Promise<void> {
+  async updatePaymentSignature(
+    orderId: string,
+    signature: string,
+  ): Promise<void> {
     await this.supabaseService.updateVolumeOrder(orderId, {
       payment_signature: signature,
-      status: OrderStatus.PAYMENT_CONFIRMED
+      status: OrderStatus.PAYMENT_CONFIRMED,
     });
   }
 
   async getPendingOrders(): Promise<VolumeOrder[]> {
     // Get orders that are payment confirmed and ready to start volume generation
-    return await this.supabaseService.getOrdersByStatus(OrderStatus.PAYMENT_CONFIRMED);
+    return await this.supabaseService.getOrdersByStatus(
+      OrderStatus.PAYMENT_CONFIRMED,
+    );
   }
 
   async deleteOrder(orderId: string): Promise<void> {
@@ -114,22 +147,28 @@ export class VolumeOrderService implements IVolumeOrderService {
    * Derive payment keypair from order ID using HKDF
    * This is the same method used by the sweeper to reconstruct keys
    */
-  async derivePaymentKeypair(orderId: string): Promise<any> {
+  async derivePaymentKeypair(orderId: string): Promise<Keypair> {
     if (!walletMasterSeed) {
-      throw new Error('WALLET_MASTER_SEED not configured');
+      throw new Error("WALLET_MASTER_SEED not configured");
     }
 
     // Convert master seed from hex to bytes
-    const masterSeedBytes = Buffer.from(walletMasterSeed, 'hex');
-    
+    const masterSeedBytes = Buffer.from(walletMasterSeed, "hex");
+
     // Derive child seed using HKDF (await the result)
-    const childSeed = await hkdf('sha256', masterSeedBytes, Buffer.from(orderId), 'pricegoupbot:payment', 32);
-    
+    const childSeed = await hkdf(
+      "sha256",
+      masterSeedBytes,
+      Buffer.from(orderId),
+      "pricegoupbot:payment",
+      32,
+    );
+
     // Ensure childSeed is a Uint8Array for Solana Keypair
     const seedArray = new Uint8Array(childSeed);
-    
+
     // Generate keypair from derived seed
-    const { Keypair } = require('@solana/web3.js');
+    const { Keypair } = require("@solana/web3.js");
     return Keypair.fromSeed(seedArray);
   }
 

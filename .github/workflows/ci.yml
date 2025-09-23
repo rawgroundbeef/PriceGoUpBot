@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [20.x, 22.x]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'yarn'
+        
+    - name: Install dependencies
+      run: yarn install --frozen-lockfile
+      
+    - name: Run linting
+      run: |
+        cd apps/telegram-bot
+        yarn lint
+        
+    - name: Run type checking
+      run: |
+        cd apps/telegram-bot
+        yarn typecheck
+        
+    - name: Run tests
+      run: |
+        cd apps/telegram-bot
+        yarn test
+      env:
+        # Test environment variables
+        BOT_TOKEN: test-bot-token
+        SUPABASE_URL: https://test.supabase.co
+        SUPABASE_SERVICE_ROLE_KEY: test-service-key
+        WALLET_MASTER_SEED: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+        TREASURY_FEES_ADDRESS: CWzw6YZsviyGa4grk3H3rK3GoGv9kCDrbQ5LYS5SSMk6
+        TREASURY_OPERATIONS_ADDRESS: 4LFQiTYDoAwRJjABXArGAGPjNSZiumoFWT5uUssK9MFY
+        CRON_SECRET: test-cron-secret
+        SOLANA_RPC_URL: https://api.devnet.solana.com
+        FEE_BPS: 500
+        MIN_SWEEP_LAMPORTS: 1000000
+        
+    - name: Run test coverage
+      run: |
+        cd apps/telegram-bot
+        yarn test:coverage
+      env:
+        # Test environment variables (same as above)
+        BOT_TOKEN: test-bot-token
+        SUPABASE_URL: https://test.supabase.co
+        SUPABASE_SERVICE_ROLE_KEY: test-service-key
+        WALLET_MASTER_SEED: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+        TREASURY_FEES_ADDRESS: CWzw6YZsviyGa4grk3H3rK3GoGv9kCDrbQ5LYS5SSMk6
+        TREASURY_OPERATIONS_ADDRESS: 4LFQiTYDoAwRJjABXArGAGPjNSZiumoFWT5uUssK9MFY
+        CRON_SECRET: test-cron-secret
+        SOLANA_RPC_URL: https://api.devnet.solana.com
+        FEE_BPS: 500
+        MIN_SWEEP_LAMPORTS: 1000000
+        
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./apps/telegram-bot/coverage/lcov.info
+        flags: telegram-bot
+        name: telegram-bot-coverage
+        fail_ci_if_error: false
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'yarn'
+        
+    - name: Install dependencies
+      run: yarn install --frozen-lockfile
+      
+    - name: Build telegram bot
+      run: |
+        cd apps/telegram-bot
+        yarn build
+        
+    - name: Check build artifacts
+      run: |
+        cd apps/telegram-bot
+        ls -la dist/
+        echo "✅ Build completed successfully"

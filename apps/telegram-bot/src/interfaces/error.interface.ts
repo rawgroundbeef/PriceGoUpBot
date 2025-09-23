@@ -1,25 +1,25 @@
-import { Context } from 'telegraf';
-import { ErrorType, ErrorContext } from '../services/error.service';
+import { Context } from "telegraf";
+import { ErrorType, ErrorContext } from "../services/error.service";
 
 export interface IErrorService {
   handleError(
     ctx: Context,
     error: Error | unknown,
     errorType?: ErrorType,
-    errorContext?: ErrorContext
+    errorContext?: ErrorContext,
   ): Promise<void>;
 
   sendErrorMessage(
     ctx: Context,
     errorType?: ErrorType,
-    errorContext?: ErrorContext
+    errorContext?: ErrorContext,
   ): Promise<void>;
 
   handleCallbackError(
     ctx: Context,
     error: Error | unknown,
     errorType?: ErrorType,
-    errorContext?: ErrorContext
+    errorContext?: ErrorContext,
   ): Promise<void>;
 
   handleMessageEditError(
@@ -27,19 +27,19 @@ export interface IErrorService {
     messageId: number,
     error: Error | unknown,
     errorType?: ErrorType,
-    errorContext?: ErrorContext
+    errorContext?: ErrorContext,
   ): Promise<void>;
 
   createErrorContext(
     userId?: string,
     action?: string,
-    details?: any,
-    showDeveloperContact?: boolean
+    details?: unknown,
+    showDeveloperContact?: boolean,
   ): ErrorContext;
 
   logError(
     error: Error | unknown,
     errorType?: ErrorType,
-    errorContext?: ErrorContext
+    errorContext?: ErrorContext,
   ): void;
-} 
+}

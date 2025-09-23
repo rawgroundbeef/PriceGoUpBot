@@ -12,8 +12,12 @@
     "start": "node dist/index.js",
     "clean": "rm -rf dist",
     "vercel-build": "yarn clean && yarn build && node scripts/set-webhook.js",
-    "lint": "eslint . --ext .ts",
-    "typecheck": "tsc --noEmit"
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
   },
   "dependencies": {
     "@panva/hkdf": "^1.2.1",
@@ -30,19 +34,21 @@
     "uuid": "^9.0.1"
   },
   "devDependencies": {
+    "@eslint/js": "^9.36.0",
     "@types/jest": "^29.5.12",
     "@types/node": "^24.5.2",
     "@types/node-fetch": "^2.6.11",
     "@types/qrcode": "^1.5.5",
     "@types/uuid": "^9.0.7",
-    "@typescript-eslint/eslint-plugin": "^7.1.0",
-    "@typescript-eslint/parser": "^7.1.0",
-    "eslint": "^8.57.0",
+    "@typescript-eslint/eslint-plugin": "^8.44.1",
+    "@typescript-eslint/parser": "^8.44.1",
+    "eslint": "^9.36.0",
     "jest": "^29.7.0",
     "nodemon": "^3.1.9",
     "ts-jest": "^29.1.2",
     "ts-node": "^10.9.2",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "typescript-eslint": "^8.44.1"
   },
   "volta": {
     "node": "22.19.0",
