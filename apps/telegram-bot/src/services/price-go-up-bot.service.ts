@@ -384,7 +384,7 @@ Package price includes all expenses - 0% hidden fees!
         };
 
         await this.volumeOrderService.updateOrder(
-          session.orderData.id,
+          session.orderData?.id || "",
           updates,
         );
 
