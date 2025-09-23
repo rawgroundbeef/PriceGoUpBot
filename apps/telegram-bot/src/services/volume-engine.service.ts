@@ -389,10 +389,10 @@ export class VolumeEngineService implements IVolumeEngineService {
     } catch (error) {
       console.error(`❌ Task ${task.id} failed:`, error);
 
-      // Still record failed attempt
+      // Still record failed attempt with unique signature
       const failedTransaction = {
         task_id: task.id,
-        signature: "failed",
+        signature: `failed-${task.id}-${Date.now()}`, // Unique failed signature
         type: "buy" as const,
         amount_sol: 0,
         amount_tokens: 0,
@@ -479,13 +479,13 @@ export class VolumeEngineService implements IVolumeEngineService {
         `💰 Funding trading wallet: ${requiredLamports / 1e9} SOL needed, ${currentBalance / 1e9} SOL available`,
       );
 
-      // Get treasury operations keypair (use a fixed derivation for treasury)
+      // Get treasury operations keypair (derived from master seed)
       const treasuryKeypair =
         await this.volumeOrderService.derivePaymentKeypair(
           "treasury-operations",
         );
 
-      // Fund the trading wallet
+      // Fund the trading wallet from treasury operations
       await this.jupiterTradingService.fundTradingWallet(
         treasuryKeypair,
         tradingKeypair.publicKey,
