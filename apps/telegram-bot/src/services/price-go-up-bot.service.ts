@@ -491,10 +491,24 @@ Total: 🟪 ${costData.totalCost} SOL
       );
 
       // Background operations (validation, DB update, pool fetching)
-      this.handleTokenAddressBackground(session, ctx, text).catch((error) => {
-        console.error("❌ Background token address processing error:", error);
-        ctx.reply("❌ Error processing token address. Please try again.");
-      });
+      this.handleTokenAddressBackground(session, ctx, text).catch(
+        async (error) => {
+          console.error("❌ Background token address processing error:", error);
+          console.error("❌ Error stack:", error.stack);
+          console.error("❌ Error details:", {
+            message: error.message,
+            name: error.name,
+            code: error.code,
+          });
+          try {
+            await ctx.reply(
+              "❌ Error processing token address. Please try again.",
+            );
+          } catch (replyError) {
+            console.error("❌ Failed to send error reply:", replyError);
+          }
+        },
+      );
     } catch (error) {
       await this.errorService.handleError(ctx, error, ErrorType.GENERAL, {});
     }
