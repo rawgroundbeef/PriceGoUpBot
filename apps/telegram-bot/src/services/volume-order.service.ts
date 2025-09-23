@@ -115,6 +115,96 @@ export class VolumeOrderService implements IVolumeOrderService {
     return await this.supabaseService.getUserOrders(userId);
   }
 
+  /**
+   * Get or create a draft order for the user
+   * Reuses existing unexpired draft orders or creates a new one
+   */
+  async getOrCreateDraftOrder(
+    userId: string,
+    username?: string,
+  ): Promise<VolumeOrder> {
+    console.log(`🔍 Looking for existing draft order for user: ${userId}`);
+
+    // First, clean up expired draft orders
+    await this.cleanupExpiredDraftOrders(userId);
+
+    // Look for existing active draft order
+    const existingDraft = await this.supabaseService.getUserDraftOrder(userId);
+
+    if (existingDraft) {
+      console.log(`♻️ Reusing existing draft order: ${existingDraft.id}`);
+      // Extend expiration by 30 minutes
+      const newExpiration = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+      await this.supabaseService.updateVolumeOrder(existingDraft.id, {
+        expires_at: newExpiration,
+        updated_at: new Date().toISOString(),
+      });
+      return { ...existingDraft, expires_at: newExpiration };
+    }
+
+    // Create new draft order
+    console.log(`🆕 Creating new draft order for user: ${userId}`);
+    const draftOrder = await this.createDraftOrder(userId, username);
+    console.log(`✅ Created new draft order: ${draftOrder.id}`);
+    return draftOrder;
+  }
+
+  /**
+   * Create a new draft order with placeholder values
+   */
+  private async createDraftOrder(
+    userId: string,
+    username?: string,
+  ): Promise<VolumeOrder> {
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 minutes from now
+
+    const draftOrderData: Omit<
+      VolumeOrder,
+      "id" | "created_at" | "updated_at"
+    > = {
+      user_id: userId,
+      username: username,
+      token_address: "PENDING",
+      pool_address: "PENDING",
+      pool_type: "RAYDIUM" as any,
+      volume_target: 0, // Will be set when user selects
+      duration_hours: 0, // Will be set when user selects
+      tasks_count: 0,
+      cost_per_task: 0,
+      total_cost: 0,
+      status: OrderStatus.PENDING_PAYMENT,
+      payment_address: "TEMP", // Will be derived after creation
+      expires_at: expiresAt,
+    };
+
+    const order = await this.supabaseService.createVolumeOrder(draftOrderData);
+
+    // Derive and update payment address
+    const paymentAddress = await this.derivePaymentAddress(order.id);
+    const updatedOrder = await this.supabaseService.updateVolumeOrder(
+      order.id,
+      {
+        payment_address: paymentAddress,
+      },
+    );
+
+    return { ...order, payment_address: paymentAddress };
+  }
+
+  /**
+   * Clean up expired draft orders for a user
+   */
+  private async cleanupExpiredDraftOrders(userId: string): Promise<void> {
+    try {
+      console.log(`🧹 Cleaning up expired draft orders for user: ${userId}`);
+      await this.supabaseService.expireOldDraftOrders(userId);
+      console.log(`✅ Expired draft orders cleaned up`);
+    } catch (error) {
+      console.warn(`⚠️ Failed to cleanup expired orders:`, error);
+      // Don't throw - this is cleanup, not critical
+    }
+  }
+
   async updatePaymentSignature(
     orderId: string,
     signature: string,

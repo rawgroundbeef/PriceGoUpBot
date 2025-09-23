@@ -24,9 +24,10 @@ CREATE TABLE volume_orders (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     started_at TIMESTAMP WITH TIME ZONE,
     completed_at TIMESTAMP WITH TIME ZONE,
+    expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '30 minutes'),
     
     CONSTRAINT volume_orders_status_check CHECK (status IN (
-        'pending_payment', 'payment_confirmed', 'running', 'paused', 'completed', 'cancelled', 'failed'
+        'pending_payment', 'payment_confirmed', 'running', 'paused', 'completed', 'cancelled', 'failed', 'expired'
     )),
     CONSTRAINT volume_orders_pool_type_check CHECK (pool_type IN (
         'raydium', 'orca', 'jupiter'

@@ -347,33 +347,57 @@ Package price includes all expenses - 0% hidden fees!
     session: UserSession,
     ctx: Context,
   ): Promise<void> {
-    if (
-      session.selectedVolume &&
-      session.selectedDuration &&
-      !session.orderData
-    ) {
-      try {
+    try {
+      console.log(
+        `📊 createDraftOrderIfReady: volume=${session.selectedVolume}, duration=${session.selectedDuration}, hasOrder=${!!session.orderData}`,
+      );
+
+      // Always ensure we have a draft order (get existing or create new)
+      if (!session.orderData) {
+        console.log(`🔍 No order in session, getting/creating draft order...`);
+        session.orderData = await this.volumeOrderService.getOrCreateDraftOrder(
+          session.userId,
+          ctx.from?.username,
+        );
+        console.log(`✅ Draft order ready: ${session.orderData.id}`);
+      }
+
+      // Update the order with current selections if both are available
+      if (session.selectedVolume && session.selectedDuration) {
         console.log(
-          `🔄 Creating draft order for user ${session.userId}: ${session.selectedVolume} volume, ${session.selectedDuration}h duration`,
+          `📊 Both volume and duration selected, updating order with costs...`,
         );
 
-        const draftOrder = await this.volumeOrderService.createOrder({
-          user_id: session.userId,
-          username: ctx.from?.username,
-          token_address: "PENDING", // Placeholder until user provides
-          pool_address: "PENDING", // Placeholder until user selects
+        const costData = await this.paymentService.calculateOrderCost(
+          session.selectedVolume,
+          session.selectedDuration,
+        );
+
+        const updates = {
           volume_target: session.selectedVolume,
           duration_hours: session.selectedDuration,
-          status: OrderStatus.PENDING_PAYMENT,
-        });
+          tasks_count: costData.tasksCount,
+          cost_per_task: costData.costPerTask,
+          total_cost: costData.totalCost,
+          // Extend expiration since user is actively configuring
+          expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+        };
 
-        session.orderData = draftOrder;
-        console.log(
-          `✅ Created draft order ${draftOrder.id} for user ${session.userId}`,
+        await this.volumeOrderService.updateOrder(
+          session.orderData.id,
+          updates,
         );
-      } catch (error) {
-        console.error("❌ Error creating draft order:", error);
+
+        // Update session with new data
+        session.orderData = { ...session.orderData, ...updates };
+
+        console.log(
+          `✅ Draft order updated: ${session.orderData.total_cost} SOL, expires in 30min`,
+        );
       }
+    } catch (error) {
+      console.error("❌ Error managing draft order:", error);
+      await ctx.reply("❌ Error creating order. Please try again.");
     }
   }
 
@@ -490,37 +514,38 @@ Total: 🟪 ${costData.totalCost} SOL
         "🔍 Validating token and searching for liquidity pools...",
       );
 
-      // Background operations (validation, DB update, pool fetching)
-      // Add timeout to prevent Vercel function from hanging
-      const backgroundPromise = this.handleTokenAddressBackground(
-        session,
-        ctx,
-        text,
-      );
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(
-          () =>
-            reject(new Error("Background processing timeout after 25 seconds")),
-          25000,
-        ),
-      );
-
-      Promise.race([backgroundPromise, timeoutPromise]).catch(async (error) => {
-        console.error("❌ Background token address processing error:", error);
-        console.error("❌ Error stack:", error.stack);
-        console.error("❌ Error details:", {
-          message: error.message,
-          name: error.name,
-          code: error.code,
-        });
-        try {
-          await ctx.reply(
-            "❌ Error processing token address. Please try again.",
-          );
-        } catch (replyError) {
-          console.error("❌ Failed to send error reply:", replyError);
+      // Perform update + pool fetch inline to avoid serverless early return
+      try {
+        console.log("⏳ Inline processing: updating order and fetching pools");
+        const inlineTimeoutMs = 9000;
+        const inlineResult = await Promise.race([
+          this.handleTokenAddressBackground(session, ctx, text),
+          new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error("inline-timeout")),
+              inlineTimeoutMs,
+            ),
+          ),
+        ]);
+        if (inlineResult === undefined) {
+          // handleTokenAddressBackground returns void on success
+          console.log("✅ Inline processing completed");
         }
-      });
+      } catch (e) {
+        const err = e as { message?: string };
+        if (err?.message === "inline-timeout") {
+          console.warn(
+            "⚠️ Inline processing hit timeout; user will see pools when ready",
+          );
+        } else {
+          console.error("❌ Inline token processing error:", e);
+          try {
+            await ctx.reply(
+              "❌ Error processing token address. Please try again.",
+            );
+          } catch {}
+        }
+      }
     } catch (error) {
       await this.errorService.handleError(ctx, error, ErrorType.GENERAL, {});
     }

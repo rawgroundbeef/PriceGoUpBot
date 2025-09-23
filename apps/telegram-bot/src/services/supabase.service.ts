@@ -7,6 +7,7 @@ import {
   TokenInfo,
   LiquidityPool,
   Transaction,
+  OrderStatus,
 } from "../interfaces";
 
 @injectable()
@@ -102,6 +103,41 @@ export class SupabaseService {
       .from("volume_orders")
       .delete()
       .eq("id", orderId);
+
+    if (error) throw error;
+  }
+
+  /**
+   * Get user's active draft order (pending_payment and not expired)
+   */
+  async getUserDraftOrder(userId: string): Promise<VolumeOrder | null> {
+    const { data, error } = await this.client
+      .from("volume_orders")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("status", OrderStatus.PENDING_PAYMENT)
+      .gt("expires_at", new Date().toISOString())
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error && error.code !== "PGRST116") throw error;
+    return data;
+  }
+
+  /**
+   * Expire old draft orders for a user
+   */
+  async expireOldDraftOrders(userId: string): Promise<void> {
+    const { error } = await this.client
+      .from("volume_orders")
+      .update({
+        status: OrderStatus.EXPIRED,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("user_id", userId)
+      .eq("status", OrderStatus.PENDING_PAYMENT)
+      .lt("expires_at", new Date().toISOString());
 
     if (error) throw error;
   }

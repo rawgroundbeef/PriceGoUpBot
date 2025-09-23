@@ -1,28 +1,29 @@
 // Volume Bot Order Status
 export enum OrderStatus {
-  PENDING_PAYMENT = 'pending_payment',
-  PAYMENT_CONFIRMED = 'payment_confirmed',
-  RUNNING = 'running',
-  PAUSED = 'paused',
-  COMPLETED = 'completed',
-  CANCELLED = 'cancelled',
-  FAILED = 'failed'
+  PENDING_PAYMENT = "pending_payment",
+  PAYMENT_CONFIRMED = "payment_confirmed",
+  RUNNING = "running",
+  PAUSED = "paused",
+  COMPLETED = "completed",
+  CANCELLED = "cancelled",
+  FAILED = "failed",
+  EXPIRED = "expired",
 }
 
 // Volume Task Status
 export enum TaskStatus {
-  PENDING = 'pending',
-  RUNNING = 'running',
-  PAUSED = 'paused',
-  COMPLETED = 'completed',
-  FAILED = 'failed'
+  PENDING = "pending",
+  RUNNING = "running",
+  PAUSED = "paused",
+  COMPLETED = "completed",
+  FAILED = "failed",
 }
 
 // Liquidity Pool Type
 export enum PoolType {
-  RAYDIUM = 'raydium',
-  ORCA = 'orca',
-  JUPITER = 'jupiter'
+  RAYDIUM = "raydium",
+  ORCA = "orca",
+  JUPITER = "jupiter",
 }
 
 // Database Schema Interfaces
@@ -45,6 +46,7 @@ export interface VolumeOrder {
   updated_at: string;
   started_at?: string;
   completed_at?: string;
+  expires_at?: string;
 }
 
 export interface VolumeTask {
@@ -88,7 +90,7 @@ export interface Transaction {
   id: string;
   task_id: string;
   signature: string;
-  type: 'buy' | 'sell';
+  type: "buy" | "sell";
   amount_sol: number;
   amount_tokens: number;
   price: number;
@@ -119,7 +121,10 @@ export interface ISolanaService {
   getTokenInfo(address: string): Promise<TokenInfo | null>;
   getLiquidityPools(tokenAddress: string): Promise<LiquidityPool[]>;
   generatePaymentAddress(): Promise<string>;
-  verifyPayment(address: string, expectedAmount: number): Promise<string | null>;
+  verifyPayment(
+    address: string,
+    expectedAmount: number,
+  ): Promise<string | null>;
 }
 
 export interface IVolumeEngineService {
@@ -134,7 +139,10 @@ export interface IVolumeEngineService {
 
 export interface IPaymentService {
   generateQRCode(address: string, amount: number): Promise<string>;
-  calculateOrderCost(volume: number, duration: number): Promise<{
+  calculateOrderCost(
+    volume: number,
+    duration: number,
+  ): Promise<{
     tasksCount: number;
     costPerTask: number;
     totalCost: number;
