@@ -1,0 +1,55 @@
+{
+  "version": 2,
+  "buildCommand": "yarn vercel-build",
+  "installCommand": "yarn install --frozen-lockfile",
+  "outputDirectory": "dist",
+  "builds": [
+    {
+      "src": "api/webhook.ts",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "api/volume-processor.ts",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "api/sweeper.ts",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/webhook",
+      "dest": "/api/webhook.ts"
+    },
+    {
+      "src": "/api/volume-processor",
+      "dest": "/api/volume-processor.ts"
+    },
+    {
+      "src": "/api/sweeper",
+      "dest": "/api/sweeper.ts"
+    }
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  },
+  "crons": [
+    {
+      "path": "/api/volume-processor",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/sweeper",
+      "schedule": "*/5 * * * *"
+    }
+  ],
+  "functions": {
+    "api/volume-processor.ts": {
+      "maxDuration": 300
+    },
+    "api/sweeper.ts": {
+      "maxDuration": 300
+    }
+  }
+}

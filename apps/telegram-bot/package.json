@@ -1,0 +1,51 @@
+{
+  "name": "telegram-bot",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "nodemon --watch 'src/**/*.ts' --exec 'ts-node' src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "clean": "rm -rf dist",
+    "vercel-build": "yarn clean && yarn build && node scripts/set-webhook.js",
+    "lint": "eslint . --ext .ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@panva/hkdf": "^1.2.1",
+    "@solana/spl-token": "^0.4.1",
+    "@solana/web3.js": "^1.91.4",
+    "@supabase/supabase-js": "^2.39.7",
+    "bs58": "^5.0.0",
+    "dotenv": "^16.4.5",
+    "inversify": "^7.5.1",
+    "node-fetch": "^2.7.0",
+    "qrcode": "^1.5.3",
+    "reflect-metadata": "^0.2.2",
+    "telegraf": "^4.15.3",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "@types/node": "^24.5.2",
+    "@types/node-fetch": "^2.6.11",
+    "@types/qrcode": "^1.5.5",
+    "@types/uuid": "^9.0.7",
+    "@typescript-eslint/eslint-plugin": "^7.1.0",
+    "@typescript-eslint/parser": "^7.1.0",
+    "eslint": "^8.57.0",
+    "jest": "^29.7.0",
+    "nodemon": "^3.1.9",
+    "ts-jest": "^29.1.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  },
+  "volta": {
+    "node": "22.19.0",
+    "yarn": "1.22.19"
+  }
+}
