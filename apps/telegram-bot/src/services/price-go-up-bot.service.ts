@@ -505,31 +505,44 @@ Total: 🟪 ${costData.totalCost} SOL
     ctx: Context,
     text: string,
   ): Promise<void> {
+    console.log(`🔄 Starting background token address processing for: ${text}`);
+
     // Update the draft order with the token address
     if (session.orderData && session.orderData.id) {
+      console.log(
+        `📝 Updating order ${session.orderData.id} with token address...`,
+      );
       await this.volumeOrderService.updateOrder(session.orderData.id, {
         token_address: text,
       });
-      console.log(
-        `📝 Updated order ${session.orderData.id} with token address`,
-      );
+      console.log(`✅ Order updated successfully`);
     }
 
     // Show pool selection
+    console.log(`🏊 Showing pool selection...`);
     await this.showPoolSelection(ctx);
+    console.log(`✅ Pool selection completed`);
   }
 
   /**
    * Show liquidity pool selection
    */
   async showPoolSelection(ctx: Context): Promise<void> {
+    console.log(`🏊 showPoolSelection called`);
     const session = await this.getUserSession(ctx.from?.id?.toString());
-    if (!session || !session.tokenAddress) return;
+    if (!session || !session.tokenAddress) {
+      console.log(`❌ No session or token address found`);
+      return;
+    }
 
     try {
+      console.log(
+        `🔍 Getting liquidity pools for token: ${session.tokenAddress}`,
+      );
       const pools = await this.solanaService.getLiquidityPools(
         session.tokenAddress,
       );
+      console.log(`📊 Received ${pools.length} pools from service`);
 
       if (pools.length === 0) {
         await ctx.reply(

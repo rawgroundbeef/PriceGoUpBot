@@ -121,17 +121,25 @@ export class SolanaService implements ISolanaService {
 
   async getLiquidityPools(tokenAddress: string): Promise<LiquidityPool[]> {
     try {
+      console.log(`🔍 getLiquidityPools called for token: ${tokenAddress}`);
+
       // First check our database
+      console.log(`🗄️ Checking database for cached pools...`);
       let pools = await this.supabaseService.getTokenPools(tokenAddress);
+      console.log(`📊 Found ${pools.length} cached pools in database`);
 
       if (pools.length === 0) {
         // Fetch from Raydium API
+        console.log(`🌐 No cached pools found, fetching from Dexscreener...`);
         pools = await this.fetchRaydiumPools(tokenAddress);
+        console.log(`📥 Received ${pools.length} pools from API`);
 
         // Save to database
+        console.log(`💾 Saving ${pools.length} pools to database...`);
         for (const pool of pools) {
           await this.supabaseService.upsertLiquidityPool(pool);
         }
+        console.log(`✅ Pools saved to database`);
       } else {
         // If cached pools look invalid (contain '...' or wrong length), refetch immediately
         const looksInvalid = pools.some(
@@ -275,36 +283,64 @@ export class SolanaService implements ISolanaService {
   ): Promise<LiquidityPool[]> {
     try {
       console.log(`🔍 Searching for pools for token: ${tokenAddress}`);
+      console.log(`🌐 Making request to Dexscreener API...`);
 
       // Prefer Dexscreener API for reliable pair discovery
       const url = `https://api.dexscreener.com/latest/dex/tokens/${tokenAddress}`;
-      const res = await fetch(url);
+      console.log(`📡 Fetching: ${url}`);
+
+      const res = await fetch(url, {
+        timeout: 10000, // 10 second timeout
+        headers: {
+          "User-Agent": "PriceGoUpBot/1.0",
+        },
+      });
+
+      console.log(`📊 Response status: ${res.status} ${res.statusText}`);
       if (!res.ok) {
         console.warn(
           `⚠️ Dexscreener returned ${res.status} - falling back to empty list`,
         );
         return [];
       }
+
+      console.log(`📥 Parsing response JSON...`);
       const json = (await res.json()) as { pairs?: unknown[] };
+      console.log(`📊 JSON parsed, checking pairs...`);
+
       const pairs: unknown[] = Array.isArray(json?.pairs) ? json.pairs : [];
+      console.log(`🔍 Found ${pairs.length} total pairs`);
+
       if (pairs.length === 0) {
         console.warn("⚠️ Dexscreener returned no pairs");
         return [];
       }
 
       // Filter to Solana network and prefer Raydium pairs; otherwise take the highest liquidity
+      console.log(`🔍 Filtering pairs for Solana network...`);
       const solPairs = pairs.filter((p) => {
         const pair = p as { chainId?: string; chain?: string };
         return (pair?.chainId || pair?.chain) === "solana";
       });
+      console.log(`🌐 Found ${solPairs.length} Solana pairs`);
+
+      console.log(`🔍 Filtering for Raydium pairs...`);
       const raydiumPairs = solPairs.filter((p) => {
         const pair = p as { dexId?: string };
         return (pair?.dexId || "").toLowerCase().includes("raydium");
       });
+      console.log(`🏊 Found ${raydiumPairs.length} Raydium pairs`);
+
       const candidates = raydiumPairs.length > 0 ? raydiumPairs : solPairs;
-      if (candidates.length === 0) return [];
+      console.log(`🎯 Using ${candidates.length} candidate pairs`);
+
+      if (candidates.length === 0) {
+        console.warn("⚠️ No suitable pairs found");
+        return [];
+      }
 
       // Sort by liquidity USD (desc)
+      console.log(`📊 Sorting ${candidates.length} candidates by liquidity...`);
       candidates.sort((a, b) => {
         const aPair = a as { liquidity?: { usd?: string | number } };
         const bPair = b as { liquidity?: { usd?: string | number } };
@@ -314,6 +350,10 @@ export class SolanaService implements ISolanaService {
         );
       });
       const top = candidates[0];
+      console.log(`🏆 Selected top pool candidate`);
+      console.log(
+        `💰 Top pool liquidity: $${Number((top as any)?.liquidity?.usd || 0).toFixed(2)}`,
+      );
 
       const topPair = top as {
         pairAddress?: string;
