@@ -6,6 +6,8 @@ import { OrderStatus, PoolType } from "../../interfaces";
 // Mock dependencies
 jest.mock("../../services/supabase.service");
 jest.mock("../../services/payment.service");
+jest.mock("@jup-ag/api");
+jest.mock("@solana/web3.js");
 
 describe("VolumeOrderService", () => {
   let volumeOrderService: VolumeOrderService;

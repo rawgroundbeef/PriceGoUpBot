@@ -2,7 +2,14 @@ import { injectable, inject } from "inversify";
 import { Connection, Keypair } from "@solana/web3.js";
 import { TYPES } from "../types";
 import { SupabaseService } from "./supabase.service";
-import { solanaRpcUrl } from "../config";
+import { JupiterTradingService } from "./jupiter-trading.service";
+import { VolumeOrderService } from "./volume-order.service";
+import {
+  solanaRpcUrl,
+  TREASURY_OPERATIONS_ADDRESS,
+  walletMasterSeed,
+} from "../config";
+const { hkdf } = require("@panva/hkdf");
 import {
   VolumeOrder,
   VolumeTask,
@@ -16,13 +23,22 @@ import {
 export class VolumeEngineService implements IVolumeEngineService {
   private connection: Connection;
   private supabaseService: SupabaseService;
+  private jupiterTradingService: JupiterTradingService;
+  private volumeOrderService: VolumeOrderService;
 
-  constructor(@inject(TYPES.SupabaseService) supabaseService: SupabaseService) {
+  constructor(
+    @inject(TYPES.SupabaseService) supabaseService: SupabaseService,
+    @inject(TYPES.JupiterTradingService)
+    jupiterTradingService: JupiterTradingService,
+    @inject(TYPES.VolumeOrderService) volumeOrderService: VolumeOrderService,
+  ) {
     this.connection = new Connection(
       solanaRpcUrl || "https://api.mainnet-beta.solana.com",
       "confirmed",
     );
     this.supabaseService = supabaseService;
+    this.jupiterTradingService = jupiterTradingService;
+    this.volumeOrderService = volumeOrderService;
   }
 
   async startVolumeGeneration(orderId: string): Promise<void> {
@@ -282,45 +298,110 @@ export class VolumeEngineService implements IVolumeEngineService {
 
   private async executeBuySellCycle(
     task: VolumeTask,
-    _order: VolumeOrder,
+    order: VolumeOrder,
   ): Promise<void> {
-    // This is a simulation of buy/sell transactions
-    // In production, you would implement actual Solana transactions here
+    console.log(`🔄 Executing REAL buy/sell cycle for task ${task.id}`);
 
-    console.log(`🔄 Simulating buy/sell cycle for task ${task.id}`);
+    try {
+      // 1. Derive trading wallet for this task
+      const tradingKeypair = await this.deriveTradingKeypair(task.id);
 
-    // Simulate random transaction amounts
-    const baseAmount = 0.1; // Base SOL amount
-    const randomMultiplier = 0.5 + Math.random(); // 0.5x to 1.5x variation
-    const transactionAmount = baseAmount * randomMultiplier;
+      // 2. Calculate trade amount (0.05-0.2 SOL per cycle)
+      const baseAmount = 0.05 + Math.random() * 0.15; // 0.05 to 0.2 SOL
+      const tradeLamports = Math.floor(baseAmount * 1e9);
 
-    // Simulate buy transaction
-    const buyTransaction = {
-      task_id: task.id,
-      signature: this.generateMockSignature(),
-      type: "buy" as const,
-      amount_sol: transactionAmount,
-      amount_tokens: transactionAmount * 1000, // Mock token amount
-      price: 0.001, // Mock price
-    };
+      // 3. Fund trading wallet if needed
+      await this.ensureTradingWalletFunded(tradingKeypair, tradeLamports * 2); // 2x for fees
 
-    await this.supabaseService.createTransaction(buyTransaction);
+      // 4. Execute BUY transaction (SOL -> Token)
+      console.log(
+        `🟢 BUY: ${baseAmount.toFixed(4)} SOL -> ${order.token_address.substring(0, 8)}...`,
+      );
+      const buyResult = await this.jupiterTradingService.executeBuy(
+        tradingKeypair,
+        order.token_address,
+        tradeLamports,
+        300, // 3% slippage
+      );
 
-    // Wait a bit between buy and sell
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+      if (!buyResult.success) {
+        throw new Error(`Buy failed: ${buyResult.error}`);
+      }
 
-    // Simulate sell transaction (smaller amount)
-    const sellAmount = transactionAmount * 0.8; // Sell 80% of what we bought
-    const sellTransaction = {
-      task_id: task.id,
-      signature: this.generateMockSignature(),
-      type: "sell" as const,
-      amount_sol: sellAmount,
-      amount_tokens: sellAmount * 1000,
-      price: 0.001,
-    };
+      // 5. Wait a short time (1-5 seconds)
+      const waitTime = 1000 + Math.random() * 4000; // 1-5 seconds
+      await new Promise((resolve) => setTimeout(resolve, waitTime));
 
-    await this.supabaseService.createTransaction(sellTransaction);
+      // 6. Execute SELL transaction (Token -> SOL) - only if buy succeeded
+      let sellResult = null;
+      if (buyResult.amountOut) {
+        console.log(`🔴 SELL: ${buyResult.amountOut} tokens -> SOL`);
+        sellResult = await this.jupiterTradingService.executeSell(
+          tradingKeypair,
+          order.token_address,
+          buyResult.amountOut,
+          300, // 3% slippage
+        );
+
+        if (!sellResult.success) {
+          console.warn(
+            `⚠️ Sell failed: ${sellResult.error}, but buy succeeded`,
+          );
+        }
+      }
+
+      // 7. Store transactions in database
+      const buyTransaction = {
+        task_id: task.id,
+        signature: buyResult.signature || "failed",
+        type: "buy" as const,
+        amount_sol: buyResult.amountIn / 1e9,
+        amount_tokens: buyResult.amountOut || 0,
+        price: buyResult.amountOut
+          ? buyResult.amountIn / 1e9 / buyResult.amountOut
+          : 0,
+      };
+
+      await this.supabaseService.createTransaction(buyTransaction);
+
+      if (sellResult) {
+        const sellTransaction = {
+          task_id: task.id,
+          signature: sellResult.signature || "failed",
+          type: "sell" as const,
+          amount_sol: sellResult.amountOut ? sellResult.amountOut / 1e9 : 0,
+          amount_tokens: buyResult.amountOut || 0,
+          price:
+            sellResult.amountOut && buyResult.amountOut
+              ? sellResult.amountOut / 1e9 / buyResult.amountOut
+              : 0,
+        };
+
+        await this.supabaseService.createTransaction(sellTransaction);
+      }
+
+      console.log(
+        `✅ Task ${task.id} completed: ${baseAmount.toFixed(4)} SOL volume generated`,
+      );
+
+      // 8. Sweep any remaining funds back to treasury
+      await this.sweepTradingWallet(tradingKeypair);
+    } catch (error) {
+      console.error(`❌ Task ${task.id} failed:`, error);
+
+      // Still record failed attempt
+      const failedTransaction = {
+        task_id: task.id,
+        signature: "failed",
+        type: "buy" as const,
+        amount_sol: 0,
+        amount_tokens: 0,
+        price: 0,
+      };
+
+      await this.supabaseService.createTransaction(failedTransaction);
+      throw error;
+    }
   }
 
   private generateMockSignature(): string {
@@ -357,5 +438,114 @@ export class VolumeEngineService implements IVolumeEngineService {
     console.log("🔄 Initializing Volume Engine (Stateless Mode)...");
     console.log("📊 Volume processing will be handled by cron jobs");
     console.log("✅ Volume Engine initialized");
+  }
+
+  /**
+   * Derive a trading wallet keypair for a specific task
+   */
+  private async deriveTradingKeypair(taskId: string): Promise<Keypair> {
+    if (!walletMasterSeed) {
+      throw new Error("WALLET_MASTER_SEED not configured");
+    }
+
+    // Convert master seed from hex to bytes
+    const masterSeedBytes = Buffer.from(walletMasterSeed, "hex");
+
+    // Use HKDF to derive a deterministic key for this task
+    const derivedKey = await hkdf(
+      "sha256",
+      masterSeedBytes,
+      new Uint8Array(0), // salt
+      Buffer.from(`task-${taskId}`, "utf8"), // info
+      32, // key length
+    );
+
+    return Keypair.fromSeed(new Uint8Array(derivedKey));
+  }
+
+  /**
+   * Ensure trading wallet has enough funds for trading
+   */
+  private async ensureTradingWalletFunded(
+    tradingKeypair: Keypair,
+    requiredLamports: number,
+  ): Promise<void> {
+    const currentBalance = await this.jupiterTradingService.getSolBalance(
+      tradingKeypair.publicKey,
+    );
+
+    if (currentBalance < requiredLamports) {
+      console.log(
+        `💰 Funding trading wallet: ${requiredLamports / 1e9} SOL needed, ${currentBalance / 1e9} SOL available`,
+      );
+
+      // Get treasury operations keypair (use a fixed derivation for treasury)
+      const treasuryKeypair =
+        await this.volumeOrderService.derivePaymentKeypair(
+          "treasury-operations",
+        );
+
+      // Fund the trading wallet
+      await this.jupiterTradingService.fundTradingWallet(
+        treasuryKeypair,
+        tradingKeypair.publicKey,
+        requiredLamports - currentBalance + 5000000, // Add 0.005 SOL buffer for fees
+      );
+    }
+  }
+
+  /**
+   * Sweep remaining funds from trading wallet back to treasury
+   */
+  private async sweepTradingWallet(tradingKeypair: Keypair): Promise<void> {
+    try {
+      const balance = await this.jupiterTradingService.getSolBalance(
+        tradingKeypair.publicKey,
+      );
+
+      // Keep minimum for rent exemption and fees
+      const minBalance = 5000000; // 0.005 SOL
+
+      if (balance > minBalance) {
+        const sweepAmount = balance - minBalance;
+
+        if (!TREASURY_OPERATIONS_ADDRESS) {
+          console.warn(
+            "⚠️ TREASURY_OPERATIONS_ADDRESS not configured, skipping sweep",
+          );
+          return;
+        }
+
+        const { SystemProgram, Transaction, PublicKey } = await import(
+          "@solana/web3.js"
+        );
+
+        const transaction = new Transaction().add(
+          SystemProgram.transfer({
+            fromPubkey: tradingKeypair.publicKey,
+            toPubkey: new PublicKey(TREASURY_OPERATIONS_ADDRESS),
+            lamports: sweepAmount,
+          }),
+        );
+
+        const signature = await this.connection.sendTransaction(
+          transaction,
+          [tradingKeypair],
+          {
+            skipPreflight: false,
+            preflightCommitment: "confirmed",
+          },
+        );
+
+        await this.connection.confirmTransaction(signature, "confirmed");
+
+        console.log(
+          `🧹 Swept ${sweepAmount / 1e9} SOL back to treasury | ${signature.substring(0, 8)}...`,
+        );
+      }
+    } catch (error) {
+      console.warn("⚠️ Failed to sweep trading wallet:", error);
+      // Don't throw - sweeping is optional
+    }
   }
 }

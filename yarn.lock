@@ -662,6 +662,11 @@
     "@jridgewell/resolve-uri" "^3.1.0"
     "@jridgewell/sourcemap-codec" "^1.4.14"
 
+"@jup-ag/api@^6.0.0":
+  version "6.0.44"
+  resolved "https://registry.yarnpkg.com/@jup-ag/api/-/api-6.0.44.tgz#ee554614f3534461297b85ca78c9440ea130f2be"
+  integrity sha512-C6oYi+wvNi07VlmWhT8+ZDMqTJuF+MiHuNBE65cYuBH6C4l0JfwpXaj6mKazAdVqVFWgngr3s2+0tdF5nDH4tA==
+
 "@next/eslint-plugin-next@^15.5.0":
   version "15.5.3"
   resolved "https://registry.yarnpkg.com/@next/eslint-plugin-next/-/eslint-plugin-next-15.5.3.tgz#81859723e22a649df045d291630cf9fae46e3e46"

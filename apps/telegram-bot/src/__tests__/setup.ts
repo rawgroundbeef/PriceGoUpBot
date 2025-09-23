@@ -6,6 +6,23 @@ import dotenv from "dotenv";
 dotenv.config({ path: ".env.test" });
 dotenv.config({ path: ".env.local", override: true });
 
+// Set up required environment variables for tests
+process.env.BOT_TOKEN = process.env.BOT_TOKEN || "test-bot-token";
+process.env.SUPABASE_URL =
+  process.env.SUPABASE_URL || "https://test.supabase.co";
+process.env.SUPABASE_SERVICE_ROLE_KEY =
+  process.env.SUPABASE_SERVICE_ROLE_KEY || "test-service-role-key";
+process.env.WALLET_MASTER_SEED =
+  process.env.WALLET_MASTER_SEED ||
+  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+process.env.TREASURY_FEES_ADDRESS =
+  process.env.TREASURY_FEES_ADDRESS || "11111111111111111111111111111111";
+process.env.TREASURY_OPERATIONS_ADDRESS =
+  process.env.TREASURY_OPERATIONS_ADDRESS || "22222222222222222222222222222222";
+process.env.CRON_SECRET = process.env.CRON_SECRET || "test-cron-secret";
+process.env.SOLANA_RPC_URL =
+  process.env.SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com";
+
 // Mock external dependencies for testing
 jest.mock("@supabase/supabase-js", () => ({
   createClient: jest.fn(() => ({
@@ -36,6 +53,24 @@ jest.mock("@solana/web3.js", () => ({
       .mockResolvedValue({ blockhash: "test-blockhash" }),
     sendRawTransaction: jest.fn().mockResolvedValue("test-signature"),
     confirmTransaction: jest.fn().mockResolvedValue(true),
+    sendTransaction: jest.fn().mockResolvedValue("test-signature"),
+    getParsedTokenAccountsByOwner: jest.fn().mockResolvedValue({ value: [] }),
+  })),
+}));
+
+// Mock Jupiter API for testing
+jest.mock("@jup-ag/api", () => ({
+  createJupiterApiClient: jest.fn(() => ({
+    quoteGet: jest.fn().mockResolvedValue({
+      inputMint: "So11111111111111111111111111111111111111112",
+      outputMint: "test-token",
+      inAmount: "100000000",
+      outAmount: "1000000",
+      priceImpactPct: "1.5",
+    }),
+    swapPost: jest.fn().mockResolvedValue({
+      swapTransaction: Buffer.from("mock-transaction").toString("base64"),
+    }),
   })),
 }));
 
