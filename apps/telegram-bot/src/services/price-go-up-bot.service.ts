@@ -491,24 +491,36 @@ Total: 🟪 ${costData.totalCost} SOL
       );
 
       // Background operations (validation, DB update, pool fetching)
-      this.handleTokenAddressBackground(session, ctx, text).catch(
-        async (error) => {
-          console.error("❌ Background token address processing error:", error);
-          console.error("❌ Error stack:", error.stack);
-          console.error("❌ Error details:", {
-            message: error.message,
-            name: error.name,
-            code: error.code,
-          });
-          try {
-            await ctx.reply(
-              "❌ Error processing token address. Please try again.",
-            );
-          } catch (replyError) {
-            console.error("❌ Failed to send error reply:", replyError);
-          }
-        },
+      // Add timeout to prevent Vercel function from hanging
+      const backgroundPromise = this.handleTokenAddressBackground(
+        session,
+        ctx,
+        text,
       );
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(
+          () =>
+            reject(new Error("Background processing timeout after 25 seconds")),
+          25000,
+        ),
+      );
+
+      Promise.race([backgroundPromise, timeoutPromise]).catch(async (error) => {
+        console.error("❌ Background token address processing error:", error);
+        console.error("❌ Error stack:", error.stack);
+        console.error("❌ Error details:", {
+          message: error.message,
+          name: error.name,
+          code: error.code,
+        });
+        try {
+          await ctx.reply(
+            "❌ Error processing token address. Please try again.",
+          );
+        } catch (replyError) {
+          console.error("❌ Failed to send error reply:", replyError);
+        }
+      });
     } catch (error) {
       await this.errorService.handleError(ctx, error, ErrorType.GENERAL, {});
     }
@@ -519,23 +531,30 @@ Total: 🟪 ${costData.totalCost} SOL
     ctx: Context,
     text: string,
   ): Promise<void> {
-    console.log(`🔄 Starting background token address processing for: ${text}`);
-
-    // Update the draft order with the token address
-    if (session.orderData && session.orderData.id) {
+    try {
       console.log(
-        `📝 Updating order ${session.orderData.id} with token address...`,
+        `🔄 Starting background token address processing for: ${text}`,
       );
-      await this.volumeOrderService.updateOrder(session.orderData.id, {
-        token_address: text,
-      });
-      console.log(`✅ Order updated successfully`);
-    }
 
-    // Show pool selection
-    console.log(`🏊 Showing pool selection...`);
-    await this.showPoolSelection(ctx);
-    console.log(`✅ Pool selection completed`);
+      // Update the draft order with the token address
+      if (session.orderData && session.orderData.id) {
+        console.log(
+          `📝 Updating order ${session.orderData.id} with token address...`,
+        );
+        await this.volumeOrderService.updateOrder(session.orderData.id, {
+          token_address: text,
+        });
+        console.log(`✅ Order updated successfully`);
+      }
+
+      // Show pool selection
+      console.log(`🏊 Showing pool selection...`);
+      await this.showPoolSelection(ctx);
+      console.log(`✅ Pool selection completed`);
+    } catch (error) {
+      console.error(`❌ Error in handleTokenAddressBackground:`, error);
+      throw error; // Re-throw to be caught by outer handler
+    }
   }
 
   /**
