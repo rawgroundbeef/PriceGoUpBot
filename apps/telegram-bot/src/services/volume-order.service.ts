@@ -89,7 +89,9 @@ export class VolumeOrderService implements IVolumeOrderService {
     orderId: string,
     updates: Partial<VolumeOrder>,
   ): Promise<void> {
+    console.log(`🔄 updateOrder called for ${orderId} with updates:`, updates);
     await this.supabaseService.updateVolumeOrder(orderId, updates);
+    console.log(`✅ updateOrder completed for ${orderId}`);
   }
 
   async updateOrderStatus(orderId: string, status: OrderStatus): Promise<void> {
