@@ -58,8 +58,15 @@ export class VolumeEngineService implements IVolumeEngineService {
         started_at: new Date().toISOString(),
       });
 
-      // Create volume tasks
-      const tasks = await this.createVolumeTasks(order);
+      // Create volume tasks (idempotent): skip if already exist
+      let tasks = await this.supabaseService.getOrderTasks(orderId);
+      if (tasks.length === 0) {
+        tasks = await this.createVolumeTasks(order);
+      } else {
+        console.log(
+          `♻️ Tasks already exist for order ${orderId}; skipping creation (${tasks.length} tasks)`,
+        );
+      }
 
       console.log(
         `✅ Started volume generation for order ${orderId} with ${tasks.length} tasks`,
