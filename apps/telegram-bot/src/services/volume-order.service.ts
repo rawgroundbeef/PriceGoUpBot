@@ -111,6 +111,17 @@ export class VolumeOrderService implements IVolumeOrderService {
     await this.supabaseService.updateVolumeOrder(orderId, updates);
   }
 
+  async restartOrder(orderId: string): Promise<void> {
+    // Remove existing tasks and set order back to payment_confirmed
+    await this.supabaseService.deleteOrderTasks(orderId);
+    await this.supabaseService.updateVolumeOrder(orderId, {
+      status: OrderStatus.PAYMENT_CONFIRMED,
+      started_at: null as unknown as string,
+      completed_at: null as unknown as string,
+      updated_at: new Date().toISOString(),
+    });
+  }
+
   async getUserOrders(userId: string): Promise<VolumeOrder[]> {
     return await this.supabaseService.getUserOrders(userId);
   }

@@ -177,6 +177,14 @@ export class SupabaseService {
     if (error) throw error;
   }
 
+  async deleteOrderTasks(orderId: string): Promise<void> {
+    const { error } = await this.client
+      .from("volume_tasks")
+      .delete()
+      .eq("order_id", orderId);
+    if (error) throw error;
+  }
+
   // Token Info
   async upsertTokenInfo(
     tokenInfo: Omit<TokenInfo, "created_at" | "updated_at">,

@@ -77,6 +77,9 @@ export class PriceGoUpBotService extends BaseService {
       this.handleResumeOrder(ctx),
     );
     this.bot.action(/^stop_order_(.+)$/, (ctx) => this.handleStopOrder(ctx));
+    this.bot.action(/^restart_order_(.+)$/, (ctx) =>
+      this.handleRestartOrder(ctx),
+    );
     this.bot.action(/^delete_order_(.+)$/, (ctx) =>
       this.handleDeleteOrder(ctx),
     );
@@ -1231,6 +1234,10 @@ ${order.completed_at ? `✨ **Completed:** ${new Date(order.completed_at).toLoca
         keyboard.push([
           Markup.button.callback("🗑️ Delete", `delete_order_${order.id}`),
         ]);
+      } else if (order.status === OrderStatus.COMPLETED) {
+        keyboard.push([
+          Markup.button.callback("🔄 Restart", `restart_order_${order.id}`),
+        ]);
       }
 
       keyboard.push([
@@ -1330,6 +1337,27 @@ ${order.completed_at ? `✨ **Completed:** ${new Date(order.completed_at).toLoca
       );
 
       await ctx.answerCbQuery("Order stopped");
+      await this.handleViewOrder(ctx); // Refresh the view
+    } catch (error) {
+      await this.errorService.handleError(ctx, error, ErrorType.GENERAL, {});
+    }
+  }
+
+  /**
+   * Handle restart order
+   */
+  async handleRestartOrder(ctx: Context): Promise<void> {
+    try {
+      const callbackQuery = ctx.callbackQuery;
+      if (!callbackQuery || !("data" in callbackQuery)) return;
+
+      const match = callbackQuery.data?.match(/^restart_order_(.+)$/);
+      if (!match) return;
+
+      const orderId = match[1];
+      await this.volumeOrderService.restartOrder(orderId);
+
+      await ctx.answerCbQuery("Order restarted");
       await this.handleViewOrder(ctx); // Refresh the view
     } catch (error) {
       await this.errorService.handleError(ctx, error, ErrorType.GENERAL, {});
