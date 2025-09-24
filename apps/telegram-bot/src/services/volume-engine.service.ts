@@ -479,11 +479,11 @@ export class VolumeEngineService implements IVolumeEngineService {
         `💰 Funding trading wallet: ${requiredLamports / 1e9} SOL needed, ${currentBalance / 1e9} SOL available`,
       );
 
-      // Get treasury operations keypair (derived from master seed)
-      const treasuryKeypair =
-        await this.volumeOrderService.derivePaymentKeypair(
-          "treasury-operations",
-        );
+      // Get treasury operations keypair (derived from master seed, matches get-treasury-addresses.js)
+      const treasuryKeypair = await this.deriveOpsKeypair();
+      console.log(
+        `🏦 Using ops signer: ${treasuryKeypair.publicKey.toBase58()} (env TREASURY_OPERATIONS_ADDRESS=${TREASURY_OPERATIONS_ADDRESS || "<unset>"})`,
+      );
 
       // Fund the trading wallet from treasury operations
       await this.jupiterTradingService.fundTradingWallet(
@@ -492,6 +492,24 @@ export class VolumeEngineService implements IVolumeEngineService {
         requiredLamports - currentBalance + 5000000, // Add 0.005 SOL buffer for fees
       );
     }
+  }
+
+  /**
+   * Derive the treasury-operations keypair (HKDF info='treasury-operations', empty salt)
+   */
+  private async deriveOpsKeypair(): Promise<Keypair> {
+    if (!walletMasterSeed) {
+      throw new Error("WALLET_MASTER_SEED not configured");
+    }
+    const masterSeedBytes = Buffer.from(walletMasterSeed, "hex");
+    const derivedKey = await hkdf(
+      "sha256",
+      masterSeedBytes,
+      new Uint8Array(0), // empty salt
+      Buffer.from("treasury-operations", "utf8"), // info
+      32,
+    );
+    return Keypair.fromSeed(new Uint8Array(derivedKey));
   }
 
   /**
