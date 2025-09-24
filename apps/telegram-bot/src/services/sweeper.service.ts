@@ -191,11 +191,14 @@ export class SweeperService {
         serviceFeeAmount,
         "fees",
       );
+      // Send ops share to per-order ops budget wallet instead of global ops
+      const perOrderOpsAddress =
+        await this.volumeOrderService.deriveOpsBudgetAddress(orderId);
       const opsSig = await this.sendToTreasury(
         paymentKeypair,
-        TREASURY_OPERATIONS_ADDRESS,
+        perOrderOpsAddress,
         opsAmount,
-        "operations",
+        "operations-budget",
       );
 
       // Update order with sweep signatures and confirm payment

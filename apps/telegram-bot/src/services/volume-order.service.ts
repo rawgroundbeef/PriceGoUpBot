@@ -283,6 +283,31 @@ export class VolumeOrderService implements IVolumeOrderService {
     return keypair.publicKey.toString();
   }
 
+  /**
+   * Derive per-order operations budget keypair (separate from payment address)
+   */
+  async deriveOpsBudgetKeypair(orderId: string): Promise<Keypair> {
+    if (!walletMasterSeed) {
+      throw new Error("WALLET_MASTER_SEED not configured");
+    }
+    const masterSeedBytes = Buffer.from(walletMasterSeed, "hex");
+    const childSeed = await hkdf(
+      "sha256",
+      masterSeedBytes,
+      Buffer.from(orderId),
+      "pricegoupbot:ops-budget",
+      32,
+    );
+    const seedArray = new Uint8Array(childSeed);
+    const { Keypair } = require("@solana/web3.js");
+    return Keypair.fromSeed(seedArray);
+  }
+
+  async deriveOpsBudgetAddress(orderId: string): Promise<string> {
+    const keypair = await this.deriveOpsBudgetKeypair(orderId);
+    return keypair.publicKey.toString();
+  }
+
   private detectPoolType(poolAddress: string): PoolType {
     // Simple detection based on known pool patterns
     // In production, you'd query the actual pool to determine its type

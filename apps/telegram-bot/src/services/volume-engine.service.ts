@@ -346,7 +346,11 @@ export class VolumeEngineService implements IVolumeEngineService {
       const tradeLamports = Math.floor(baseAmount * 1e9);
 
       // 3. Fund trading wallet if needed
-      await this.ensureTradingWalletFunded(tradingKeypair, tradeLamports * 2); // 2x for fees
+      await this.ensureTradingWalletFunded(
+        tradingKeypair,
+        tradeLamports * 2,
+        order.id,
+      ); // 2x for fees
 
       // 4. Execute BUY transaction (SOL -> Token)
       console.log(
@@ -504,6 +508,7 @@ export class VolumeEngineService implements IVolumeEngineService {
   private async ensureTradingWalletFunded(
     tradingKeypair: Keypair,
     requiredLamports: number,
+    orderId: string,
   ): Promise<void> {
     const currentBalance = await this.jupiterTradingService.getSolBalance(
       tradingKeypair.publicKey,
@@ -514,20 +519,32 @@ export class VolumeEngineService implements IVolumeEngineService {
         `💰 Funding trading wallet: ${requiredLamports / 1e9} SOL needed, ${currentBalance / 1e9} SOL available`,
       );
 
-      // Get treasury operations keypair (derived from master seed, matches get-treasury-addresses.js)
-      const treasuryKeypair = await this.deriveOpsKeypair();
-      console.log(
-        `🏦 Using ops signer: ${treasuryKeypair.publicKey.toBase58()} (env TREASURY_OPERATIONS_ADDRESS=${TREASURY_OPERATIONS_ADDRESS || "<unset>"})`,
+      // FUND FROM PER-ORDER OPS BUDGET WALLET instead of global ops
+      // We cap funding to the per-order budget balance to prevent overspend
+      const budgetKeypair =
+        await this.volumeOrderService.deriveOpsBudgetKeypair(orderId);
+      const budgetBalance = await this.jupiterTradingService.getSolBalance(
+        budgetKeypair.publicKey,
       );
+      const maxFund = Math.max(0, budgetBalance - 5000000); // keep 0.005 SOL buffer
+      const toFund = Math.min(requiredLamports - currentBalance, maxFund);
+      console.log(
+        `🏦 Using per-order budget signer: ${budgetKeypair.publicKey.toBase58()} | balance=${budgetBalance / 1e9} SOL | toFund=${toFund / 1e9} SOL`,
+      );
+      if (toFund <= 0) {
+        throw new Error("Insufficient per-order budget to fund trading wallet");
+      }
 
       // Fund the trading wallet from treasury operations
       await this.jupiterTradingService.fundTradingWallet(
-        treasuryKeypair,
+        budgetKeypair,
         tradingKeypair.publicKey,
-        requiredLamports - currentBalance + 5000000, // Add 0.005 SOL buffer for fees
+        toFund,
       );
     }
   }
+
+  // removed getOrderIdForTask: orderId is now passed explicitly
 
   /**
    * Derive the treasury-operations keypair (HKDF info='treasury-operations', empty salt)
