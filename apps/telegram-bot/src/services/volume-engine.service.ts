@@ -209,7 +209,26 @@ export class VolumeEngineService implements IVolumeEngineService {
     }
 
     // Get current task states
-    const currentTasks = await this.supabaseService.getOrderTasks(orderId);
+    let currentTasks = await this.supabaseService.getOrderTasks(orderId);
+    console.log(
+      `🧩 Order ${orderId} has ${currentTasks.length} tasks in DB (status counts: ` +
+        `${
+          currentTasks.reduce<Record<string, number>>((acc, t) => {
+            acc[t.status] = (acc[t.status] || 0) + 1;
+            return acc;
+          }, {}) as unknown as string
+        })`,
+    );
+    if (currentTasks.length === 0) {
+      console.warn(
+        `⚠️ No tasks found for running order ${orderId}; creating tasks now`,
+      );
+      await this.createVolumeTasks(order);
+      currentTasks = await this.supabaseService.getOrderTasks(orderId);
+      console.log(
+        `🧩 After creation, order ${orderId} has ${currentTasks.length} tasks`,
+      );
+    }
     let processedTasks = 0;
 
     for (const task of currentTasks) {
@@ -218,6 +237,9 @@ export class VolumeEngineService implements IVolumeEngineService {
 
       // Check if it's time to execute this task
       const shouldExecute = await this.shouldExecuteTask(task);
+      console.log(
+        `⏱️ Task ${task.id.substring(0, 8)} status=${task.status} last=${task.last_transaction_at || "never"} interval=${task.interval_minutes}m -> shouldExecute=${shouldExecute}`,
+      );
       if (!shouldExecute) continue;
 
       try {
@@ -255,6 +277,7 @@ export class VolumeEngineService implements IVolumeEngineService {
 
         await this.supabaseService.updateVolumeTask(task.id, {
           status: TaskStatus.FAILED,
+          last_transaction_at: new Date().toISOString(),
         });
       }
     }
@@ -279,11 +302,16 @@ export class VolumeEngineService implements IVolumeEngineService {
     if (task.status === TaskStatus.PENDING) return true;
 
     // If task is completed, don't execute
-    if (
-      task.status === TaskStatus.COMPLETED ||
-      task.status === TaskStatus.FAILED
-    )
-      return false;
+    if (task.status === TaskStatus.COMPLETED) return false;
+
+    // Allow FAILED tasks to retry after a short cooldown
+    if (task.status === TaskStatus.FAILED) {
+      const retryCooldownMinutes = 5; // minimal cooldown
+      if (!task.last_transaction_at) return true;
+      const last = new Date(task.last_transaction_at);
+      const minutes = (Date.now() - last.getTime()) / (1000 * 60);
+      return minutes >= retryCooldownMinutes;
+    }
 
     // Check if enough time has passed since last execution
     if (!task.last_transaction_at) return true;
