@@ -335,112 +335,105 @@ export class VolumeEngineService implements IVolumeEngineService {
     task: VolumeTask,
     order: VolumeOrder,
   ): Promise<void> {
-    console.log(`🔄 Executing REAL buy/sell cycle for task ${task.id}`);
+    console.log(`🔄 Executing action tick for task ${task.id}`);
 
-    try {
-      // 1. Derive trading wallet for this task
-      const tradingKeypair = await this.deriveTradingKeypair(task.id);
+    // 1. Derive trading wallet for this task
+    const tradingKeypair = await this.deriveTradingKeypair(task.id);
 
-      // 2. Calculate trade amount (0.05-0.2 SOL per cycle)
-      const baseAmount = 0.05 + Math.random() * 0.15; // 0.05 to 0.2 SOL
-      const tradeLamports = Math.floor(baseAmount * 1e9);
+    // 2. Decide action based on last tx and token balance
+    const lastTxs = await this.supabaseService.getTaskTransactions(task.id);
+    const lastTx = lastTxs[0] || null;
 
-      // 3. Fund trading wallet if needed
+    // Check token balance to prefer selling when holdings exist
+    const tokenBalance = await this.jupiterTradingService.getTokenBalance(
+      tradingKeypair.publicKey,
+      order.token_address,
+    );
+
+    const preferSell = tokenBalance > 0;
+    const lastWasBuy = lastTx?.type === ("buy" as const);
+    const shouldSell = preferSell && lastWasBuy;
+
+    if (shouldSell) {
+      // Ensure small SOL for fees
       await this.ensureTradingWalletFunded(
         tradingKeypair,
-        tradeLamports * 2,
+        10_000_000,
         order.id,
-      ); // 2x for fees
+      ); // 0.01 SOL
 
-      // 4. Execute BUY transaction (SOL -> Token)
       console.log(
-        `🟢 BUY: ${baseAmount.toFixed(4)} SOL -> ${order.token_address.substring(0, 8)}...`,
+        `🔴 SELL: ${tokenBalance} ${order.token_address.substring(0, 8)}... -> SOL`,
       );
-      const buyResult = await this.jupiterTradingService.executeBuy(
+      const sellResult = await this.jupiterTradingService.executeSell(
         tradingKeypair,
         order.token_address,
-        tradeLamports,
-        300, // 3% slippage
+        Math.floor(tokenBalance),
+        300,
       );
 
-      if (!buyResult.success) {
-        throw new Error(`Buy failed: ${buyResult.error}`);
-      }
-
-      // 5. Wait a short time (1-5 seconds)
-      const waitTime = 1000 + Math.random() * 4000; // 1-5 seconds
-      await new Promise((resolve) => setTimeout(resolve, waitTime));
-
-      // 6. Execute SELL transaction (Token -> SOL) - only if buy succeeded
-      let sellResult = null;
-      if (buyResult.amountOut) {
-        console.log(`🔴 SELL: ${buyResult.amountOut} tokens -> SOL`);
-        sellResult = await this.jupiterTradingService.executeSell(
-          tradingKeypair,
-          order.token_address,
-          buyResult.amountOut,
-          300, // 3% slippage
-        );
-
-        if (!sellResult.success) {
-          console.warn(
-            `⚠️ Sell failed: ${sellResult.error}, but buy succeeded`,
-          );
-        }
-      }
-
-      // 7. Store transactions in database
-      const buyTransaction = {
+      const sellTx = {
         task_id: task.id,
-        signature: buyResult.signature || "failed",
-        type: "buy" as const,
-        amount_sol: buyResult.amountIn / 1e9,
-        amount_tokens: buyResult.amountOut || 0,
-        price: buyResult.amountOut
-          ? buyResult.amountIn / 1e9 / buyResult.amountOut
-          : 0,
+        signature: sellResult.signature || `failed-${task.id}-${Date.now()}`,
+        type: "sell" as const,
+        amount_sol: sellResult.amountOut ? sellResult.amountOut / 1e9 : 0,
+        amount_tokens: tokenBalance,
+        price:
+          sellResult.amountOut && tokenBalance
+            ? sellResult.amountOut / 1e9 / tokenBalance
+            : 0,
       };
+      await this.supabaseService.createTransaction(sellTx);
 
-      await this.supabaseService.createTransaction(buyTransaction);
-
-      if (sellResult) {
-        const sellTransaction = {
-          task_id: task.id,
-          signature: sellResult.signature || "failed",
-          type: "sell" as const,
-          amount_sol: sellResult.amountOut ? sellResult.amountOut / 1e9 : 0,
-          amount_tokens: buyResult.amountOut || 0,
-          price:
-            sellResult.amountOut && buyResult.amountOut
-              ? sellResult.amountOut / 1e9 / buyResult.amountOut
-              : 0,
-        };
-
-        await this.supabaseService.createTransaction(sellTransaction);
+      if (!sellResult.success) {
+        console.warn(`⚠️ Sell failed: ${sellResult.error}`);
+        throw new Error(`Sell failed: ${sellResult.error}`);
       }
 
-      console.log(
-        `✅ Task ${task.id} completed: ${baseAmount.toFixed(4)} SOL volume generated`,
-      );
-
-      // 8. Sweep any remaining funds back to treasury
+      // Sweep after sell
       await this.sweepTradingWallet(tradingKeypair);
-    } catch (error) {
-      console.error(`❌ Task ${task.id} failed:`, error);
 
-      // Still record failed attempt with unique signature
-      const failedTransaction = {
-        task_id: task.id,
-        signature: `failed-${task.id}-${Date.now()}`, // Unique failed signature
-        type: "buy" as const,
-        amount_sol: 0,
-        amount_tokens: 0,
-        price: 0,
-      };
-
-      await this.supabaseService.createTransaction(failedTransaction);
-      throw error;
+      console.log(`✅ SELL tick completed for task ${task.id}`);
+      return;
     }
+
+    // BUY path
+    const baseAmount = 0.05 + Math.random() * 0.15; // 0.05 to 0.2 SOL
+    const tradeLamports = Math.floor(baseAmount * 1e9);
+
+    await this.ensureTradingWalletFunded(
+      tradingKeypair,
+      tradeLamports * 2,
+      order.id,
+    );
+
+    console.log(
+      `🟢 BUY: ${baseAmount.toFixed(4)} SOL -> ${order.token_address.substring(0, 8)}...`,
+    );
+    const buyResult = await this.jupiterTradingService.executeBuy(
+      tradingKeypair,
+      order.token_address,
+      tradeLamports,
+      300,
+    );
+
+    const buyTx = {
+      task_id: task.id,
+      signature: buyResult.signature || `failed-${task.id}-${Date.now()}`,
+      type: "buy" as const,
+      amount_sol: buyResult.amountIn / 1e9,
+      amount_tokens: buyResult.amountOut || 0,
+      price: buyResult.amountOut
+        ? buyResult.amountIn / 1e9 / buyResult.amountOut
+        : 0,
+    };
+    await this.supabaseService.createTransaction(buyTx);
+
+    if (!buyResult.success) {
+      throw new Error(`Buy failed: ${buyResult.error}`);
+    }
+
+    console.log(`✅ BUY tick completed for task ${task.id}`);
   }
 
   private generateMockSignature(): string {
